@@ -73,15 +73,6 @@ cc_library_shared {
         "VendorTagDescriptor.cpp",
     ],
 
-    product_variables: {
-        jdc: {
-            uses_generic_camera_parameter_library: {
-                srcs: [
-                    "CameraParameters.cpp",
-                ],
-            },
-        },
-    },
     defaults: ["camera_parameters_defaults"],
 
     shared_libs: [
