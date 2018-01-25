@@ -60,6 +60,7 @@ cc_library_shared {
         "Camera.cpp",
         "CameraMetadata.cpp",
         "CaptureResult.cpp",
+        "CameraParameters.cpp",
         "CameraParameters2.cpp",
         "ICamera.cpp",
         "ICameraClient.cpp",
@@ -73,15 +74,15 @@ cc_library_shared {
         "VendorTagDescriptor.cpp",
     ],
 
-    product_variables: {
-        lineage: {
-            uses_generic_camera_parameter_library: {
-                srcs: [
-                    "CameraParameters.cpp",
-                ],
-            },
-        },
-    },
+//    product_variables: {
+//       jdc: {
+//            uses_generic_camera_parameter_library: {
+//                srcs: [
+//                    "CameraParameters.cpp",
+//                ],
+//            },
+//        },
+//    },
     defaults: ["camera_parameters_defaults"],
 
     shared_libs: [

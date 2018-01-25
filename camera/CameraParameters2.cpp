@@ -25,6 +25,8 @@
 
 namespace android {
 
+
+
 CameraParameters2::CameraParameters2()
                 : mMap()
 {
