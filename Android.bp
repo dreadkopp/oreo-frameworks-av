@@ -1,6 +1,0 @@
-subdirs = [
-    "camera",
-    "drm/*",
-    "media/*",
-    "soundtrigger",
-]
