@@ -128,7 +128,11 @@ status_t SurfaceMediaSource::setFrameRate(int32_t fps)
 
 MetadataBufferType SurfaceMediaSource::metaDataStoredInVideoBuffers() const {
     ALOGV("isMetaDataStoredInVideoBuffers");
+#ifdef CAMCORDER_GRALLOC_SOURCE
     return kMetadataBufferTypeGrallocSource;
+#else
+    return kMetadataBufferTypeANWBuffer;
+#endif
 }
 
 int32_t SurfaceMediaSource::getFrameRate( ) const {
@@ -249,6 +253,7 @@ sp<MetaData> SurfaceMediaSource::getFormat()
     return meta;
 }
 
+#ifdef CAMCORDER_GRALLOC_SOURCE
 // Pass the data to the MediaBuffer. Pass in only the metadata
 // The metadata passed consists of two parts:
 // 1. First, there is an integer indicating that it is a GRAlloc
@@ -275,6 +280,7 @@ static void passMetadataBuffer(MediaBuffer **buffer,
     ALOGV("handle = %p, , offset = %zu, length = %zu",
             bufferHandle, (*buffer)->range_length(), (*buffer)->range_offset());
 }
+#endif
 
 // Pass the data to the MediaBuffer. Pass in only the metadata
 // Note: Call only when you have the lock
@@ -378,7 +384,11 @@ status_t SurfaceMediaSource::read(
     mNumFramesEncoded++;
     // Pass the data to the MediaBuffer. Pass in only the metadata
 
+#ifdef CAMCORDER_GRALLOC_SOURCE
     passMetadataBuffer(buffer, mSlots[mCurrentSlot].mGraphicBuffer->handle);
+#else
+    passMetadataBuffer_l(buffer, mSlots[mCurrentSlot].mGraphicBuffer->getNativeBuffer());
+#endif
 
     (*buffer)->setObserver(this);
     (*buffer)->add_ref();
