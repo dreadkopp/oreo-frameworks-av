@@ -362,7 +362,7 @@ private:
 
 
         sp<MediaPlayerBase>     setDataSource_pre(player_type playerType);
-        status_t                setDataSource_post(const sp<MediaPlayerBase>& p,
+        void                    setDataSource_post(const sp<MediaPlayerBase>& p,
                                                    status_t status);
 
         static  void            notify(void* cookie, int msg,
@@ -404,7 +404,7 @@ private:
             wp<MediaPlayerBase> mListener;
         };
 
-        void clearDeathNotifiers_l();
+        void clearDeathNotifiers();
 
         friend class MediaPlayerService;
                                 Client( const sp<MediaPlayerService>& service,
@@ -433,7 +433,7 @@ private:
         void addNewMetadataUpdate(media::Metadata::Type type);
 
         // Disconnect from the currently connected ANativeWindow.
-        void disconnectNativeWindow_l();
+        void disconnectNativeWindow();
 
         status_t setAudioAttributes_l(const Parcel &request);
 

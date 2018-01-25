@@ -600,14 +600,17 @@ MediaPlayerService::Client::Client(
 MediaPlayerService::Client::~Client()
 {
     ALOGV("Client(%d) destructor pid = %d", mConnId, mPid);
-    mAudioOutput.clear();
+    {
+        Mutex::Autolock l(mLock);
+        mAudioOutput.clear();
+    }
     wp<Client> client(this);
     disconnect();
     mService->removeClient(client);
     if (mAudioAttributes != NULL) {
         free(mAudioAttributes);
     }
-    clearDeathNotifiers_l();
+    clearDeathNotifiers();
 }
 
 void MediaPlayerService::Client::disconnect()
@@ -635,10 +638,7 @@ void MediaPlayerService::Client::disconnect()
         p->reset();
     }
 
-    {
-        Mutex::Autolock l(mLock);
-        disconnectNativeWindow_l();
-    }
+    disconnectNativeWindow();
 
     IPCThreadState::self()->flushCommands();
 }
@@ -715,7 +715,7 @@ void MediaPlayerService::Client::ServiceDeathNotifier::unlinkToDeath() {
     }
 }
 
-void MediaPlayerService::Client::clearDeathNotifiers_l() {
+void MediaPlayerService::Client::clearDeathNotifiers() {
     if (mExtractorDeathListener != nullptr) {
         mExtractorDeathListener->unlinkToDeath();
         mExtractorDeathListener = nullptr;
@@ -730,6 +730,7 @@ sp<MediaPlayerBase> MediaPlayerService::Client::setDataSource_pre(
         player_type playerType)
 {
     ALOGV("player type = %d", playerType);
+    clearDeathNotifiers();
 
     // create the right type of player
     sp<MediaPlayerBase> p = createPlayer(playerType);
@@ -743,11 +744,9 @@ sp<MediaPlayerBase> MediaPlayerService::Client::setDataSource_pre(
         ALOGE("extractor service not available");
         return NULL;
     }
-    sp<ServiceDeathNotifier> extractorDeathListener =
-            new ServiceDeathNotifier(binder, p, MEDIAEXTRACTOR_PROCESS_DEATH);
-    binder->linkToDeath(extractorDeathListener);
+    mExtractorDeathListener = new ServiceDeathNotifier(binder, p, MEDIAEXTRACTOR_PROCESS_DEATH);
+    binder->linkToDeath(mExtractorDeathListener);
 
-    sp<ServiceDeathNotifier> codecDeathListener;
     if (property_get_bool("persist.media.treble_omx", true)) {
         // Treble IOmx
         sp<IOmx> omx = IOmx::getService();
@@ -755,8 +754,8 @@ sp<MediaPlayerBase> MediaPlayerService::Client::setDataSource_pre(
             ALOGE("Treble IOmx not available");
             return NULL;
         }
-        codecDeathListener = new ServiceDeathNotifier(omx, p, MEDIACODEC_PROCESS_DEATH);
-        omx->linkToDeath(codecDeathListener, 0);
+        mCodecDeathListener = new ServiceDeathNotifier(omx, p, MEDIACODEC_PROCESS_DEATH);
+        omx->linkToDeath(mCodecDeathListener, 0);
     } else {
         // Legacy IOMX
         binder = sm->getService(String16("media.codec"));
@@ -764,17 +763,12 @@ sp<MediaPlayerBase> MediaPlayerService::Client::setDataSource_pre(
             ALOGE("codec service not available");
             return NULL;
         }
-        codecDeathListener = new ServiceDeathNotifier(binder, p, MEDIACODEC_PROCESS_DEATH);
-        binder->linkToDeath(codecDeathListener);
+        mCodecDeathListener = new ServiceDeathNotifier(binder, p, MEDIACODEC_PROCESS_DEATH);
+        binder->linkToDeath(mCodecDeathListener);
     }
 
-    Mutex::Autolock lock(mLock);
-
-    clearDeathNotifiers_l();
-    mExtractorDeathListener = extractorDeathListener;
-    mCodecDeathListener = codecDeathListener;
-
     if (!p->hardwareOutput()) {
+        Mutex::Autolock l(mLock);
         mAudioOutput = new AudioOutput(mAudioSessionId, IPCThreadState::self()->getCallingUid(),
                 mPid, mAudioAttributes);
         static_cast<MediaPlayerInterface*>(p.get())->setAudioSink(mAudioOutput);
@@ -783,29 +777,29 @@ sp<MediaPlayerBase> MediaPlayerService::Client::setDataSource_pre(
     return p;
 }
 
-status_t MediaPlayerService::Client::setDataSource_post(
+void MediaPlayerService::Client::setDataSource_post(
         const sp<MediaPlayerBase>& p,
         status_t status)
 {
     ALOGV(" setDataSource");
-    if (status != OK) {
-        ALOGE("  error: %d", status);
-        return status;
+    mStatus = status;
+    if (mStatus != OK) {
+        ALOGE("  error: %d", mStatus);
+        return;
     }
 
     // Set the re-transmission endpoint if one was chosen.
     if (mRetransmitEndpointValid) {
-        status = p->setRetransmitEndpoint(&mRetransmitEndpoint);
-        if (status != NO_ERROR) {
-            ALOGE("setRetransmitEndpoint error: %d", status);
+        mStatus = p->setRetransmitEndpoint(&mRetransmitEndpoint);
+        if (mStatus != NO_ERROR) {
+            ALOGE("setRetransmitEndpoint error: %d", mStatus);
         }
     }
 
-    if (status == OK) {
-        Mutex::Autolock lock(mLock);
+    if (mStatus == OK) {
+        Mutex::Autolock l(mLock);
         mPlayer = p;
     }
-    return status;
 }
 
 status_t MediaPlayerService::Client::setDataSource(
@@ -836,9 +830,9 @@ status_t MediaPlayerService::Client::setDataSource(
             ALOGE("Couldn't open fd for %s", url);
             return UNKNOWN_ERROR;
         }
-        status_t status = setDataSource(fd, 0, 0x7fffffffffLL); // this sets mStatus
+        setDataSource(fd, 0, 0x7fffffffffLL); // this sets mStatus
         close(fd);
-        return mStatus = status;
+        return mStatus;
     } else {
         player_type playerType = MediaPlayerFactory::getPlayerType(this, url);
         sp<MediaPlayerBase> p = setDataSource_pre(playerType);
@@ -846,9 +840,8 @@ status_t MediaPlayerService::Client::setDataSource(
             return NO_INIT;
         }
 
-        return mStatus =
-                setDataSource_post(
-                p, p->setDataSource(httpService, url, headers));
+        setDataSource_post(p, p->setDataSource(httpService, url, headers));
+        return mStatus;
     }
 }
 
@@ -888,7 +881,8 @@ status_t MediaPlayerService::Client::setDataSource(int fd, int64_t offset, int64
     }
 
     // now set data source
-    return mStatus = setDataSource_post(p, p->setDataSource(fd, offset, length));
+    setDataSource_post(p, p->setDataSource(fd, offset, length));
+    return mStatus;
 }
 
 status_t MediaPlayerService::Client::setDataSource(
@@ -901,7 +895,8 @@ status_t MediaPlayerService::Client::setDataSource(
     }
 
     // now set data source
-    return mStatus = setDataSource_post(p, p->setDataSource(source));
+    setDataSource_post(p, p->setDataSource(source));
+    return mStatus;
 }
 
 status_t MediaPlayerService::Client::setDataSource(
@@ -913,10 +908,11 @@ status_t MediaPlayerService::Client::setDataSource(
         return NO_INIT;
     }
     // now set data source
-    return mStatus = setDataSource_post(p, p->setDataSource(dataSource));
+    setDataSource_post(p, p->setDataSource(dataSource));
+    return mStatus;
 }
 
-void MediaPlayerService::Client::disconnectNativeWindow_l() {
+void MediaPlayerService::Client::disconnectNativeWindow() {
     if (mConnectedWindow != NULL) {
         status_t err = nativeWindowDisconnect(
                 mConnectedWindow.get(), "disconnectNativeWindow");
@@ -953,8 +949,7 @@ status_t MediaPlayerService::Client::setVideoSurfaceTexture(
             // ANW, which may result in errors.
             reset();
 
-            Mutex::Autolock lock(mLock);
-            disconnectNativeWindow_l();
+            disconnectNativeWindow();
 
             return err;
         }
@@ -965,22 +960,14 @@ status_t MediaPlayerService::Client::setVideoSurfaceTexture(
     // on the disconnected ANW, which may result in errors.
     status_t err = p->setVideoSurfaceTexture(bufferProducer);
 
-    mLock.lock();
-    disconnectNativeWindow_l();
+    disconnectNativeWindow();
+
+    mConnectedWindow = anw;
 
     if (err == OK) {
-        mConnectedWindow = anw;
         mConnectedWindowBinder = binder;
-        mLock.unlock();
     } else {
-        mLock.unlock();
-        status_t err = nativeWindowDisconnect(
-                anw.get(), "disconnectNativeWindow");
-
-        if (err != OK) {
-            ALOGW("nativeWindowDisconnect returned an error: %s (%d)",
-                    strerror(-err), err);
-        }
+        disconnectNativeWindow();
     }
 
     return err;
@@ -1398,11 +1385,9 @@ status_t MediaPlayerService::Client::setRetransmitEndpoint(
     if (p != 0) return INVALID_OPERATION;
 
     if (NULL != endpoint) {
-        Mutex::Autolock lock(mLock);
         mRetransmitEndpoint = *endpoint;
         mRetransmitEndpointValid = true;
     } else {
-        Mutex::Autolock lock(mLock);
         mRetransmitEndpointValid = false;
     }
 
@@ -1420,7 +1405,6 @@ status_t MediaPlayerService::Client::getRetransmitEndpoint(
     if (p != NULL)
         return p->getRetransmitEndpoint(endpoint);
 
-    Mutex::Autolock lock(mLock);
     if (!mRetransmitEndpointValid)
         return NO_INIT;
 
