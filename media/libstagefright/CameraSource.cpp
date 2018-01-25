@@ -1090,6 +1090,7 @@ status_t CameraSource::read(
                 }
                 ALOGW("Timed out waiting for incoming camera video frames: %" PRId64 " us",
                     mLastFrameTimestampUs);
+		return ERROR_END_OF_STREAM;
             }
         }
         if (!mStarted) {
