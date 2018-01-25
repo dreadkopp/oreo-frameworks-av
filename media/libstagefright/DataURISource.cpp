@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include <media/stagefright/DataURISource.h>
+#include <media/stagefright/DataUriSource.h>
 
 #include <media/stagefright/foundation/ABuffer.h>
 #include <media/stagefright/foundation/AString.h>
@@ -23,7 +23,7 @@
 namespace android {
 
 // static
-sp<DataURISource> DataURISource::Create(const char *uri) {
+sp<DataUriSource> DataUriSource::Create(const char *uri) {
     if (strncasecmp("data:", uri, 5)) {
         return NULL;
     }
@@ -71,21 +71,21 @@ sp<DataURISource> DataURISource::Create(const char *uri) {
 
     // We don't really care about charset or mime type.
 
-    return new DataURISource(buffer);
+    return new DataUriSource(buffer);
 }
 
-DataURISource::DataURISource(const sp<ABuffer> &buffer)
+DataUriSource::DataUriSource(const sp<ABuffer> &buffer)
     : mBuffer(buffer) {
 }
 
-DataURISource::~DataURISource() {
+DataUriSource::~DataUriSource() {
 }
 
-status_t DataURISource::initCheck() const {
+status_t DataUriSource::initCheck() const {
     return OK;
 }
 
-ssize_t DataURISource::readAt(off64_t offset, void *data, size_t size) {
+ssize_t DataUriSource::readAt(off64_t offset, void *data, size_t size) {
     if ((offset < 0) || (offset >= (off64_t)mBuffer->size())) {
         return 0;
     }
@@ -100,11 +100,10 @@ ssize_t DataURISource::readAt(off64_t offset, void *data, size_t size) {
     return copy;
 }
 
-status_t DataURISource::getSize(off64_t *size) {
+status_t DataUriSource::getSize(off64_t *size) {
     *size = mBuffer->size();
 
     return OK;
 }
 
 }  // namespace android
-
